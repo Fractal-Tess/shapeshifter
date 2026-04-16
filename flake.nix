@@ -43,15 +43,69 @@
           xorg.libXxf86vm
         ];
 
+      tuiRuntimeDeps =
+        pkgs: with pkgs; [
+          libxcb
+          xorg.libXau
+          xorg.libXdmcp
+        ];
+
       runtimeLibraryPath =
         pkgs:
         "/run/opengl-driver/lib:${pkgs.lib.makeLibraryPath (commonRuntimeDeps pkgs)}";
+
+      rustToolchain = pkgs: pkgs.rust-bin.stable.latest.default;
+
+      mkRustPackage =
+        pkgs:
+        { pname, buildInputs ? [ ], nativeBuildInputs ? [ ], postFixup ? "" }:
+        pkgs.rustPlatform.buildRustPackage {
+          inherit pname;
+          version = "0.1.0";
+          src = ./.;
+          buildAndTestSubdir = if pname == "shapeshifter-tui" then "apps/shapeshifter-tui" else "apps/shapeshifter-desktop";
+          cargoHash = "sha256-YtxNXJE/Svz7JwNnd9tqRO0P5dQ7+tnvGAKkPmU6Sjs=";
+          nativeBuildInputs = [ pkgs.pkg-config ] ++ nativeBuildInputs;
+          buildInputs = buildInputs;
+          postFixup = postFixup;
+          meta = {
+            description = "ChatGPT / Codex account manager";
+            license = pkgs.lib.licenses.mit;
+            mainProgram = pname;
+          };
+        };
     in
     {
+      packages = eachSystem (pkgs: {
+        shapeshifter-tui = mkRustPackage pkgs {
+          pname = "shapeshifter-tui";
+          buildInputs = tuiRuntimeDeps pkgs;
+          postFixup = ''
+            patchelf --set-rpath "${pkgs.lib.makeLibraryPath (tuiRuntimeDeps pkgs)}" $out/bin/shapeshifter-tui
+          '';
+        };
+
+        shapeshifter-desktop = mkRustPackage pkgs {
+          pname = "shapeshifter-desktop";
+          buildInputs = commonRuntimeDeps pkgs;
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          postFixup = ''
+            wrapProgram $out/bin/shapeshifter-desktop \
+              --prefix LD_LIBRARY_PATH : "${runtimeLibraryPath pkgs}"
+          '';
+        };
+
+        default = self.packages.${pkgs.system}.shapeshifter-tui;
+      });
+
+      overlays.default = final: prev: {
+        shapeshifter-tui = self.packages.${final.system}.shapeshifter-tui;
+        shapeshifter-desktop = self.packages.${final.system}.shapeshifter-desktop;
+      };
+
       devShells = eachSystem (pkgs: {
         default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
-            # Complete Rust toolchain with cargo, rustc, etc.
             (rust-bin.stable.latest.default.override {
               extensions = [
                 "rust-analyzer"
@@ -62,12 +116,6 @@
               ];
               targets = [ "x86_64-unknown-linux-musl" ];
             })
-            # Or alternatively, you can use the complete toolchain:
-            # (rust-bin.stable.latest.complete)
-            # (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-            # clang
-            # Use mold when we are running in Linux
-            # (pkgs.lib.optionals pkgs.stdenv.isLinux pkgs.mold)
           ] ++ commonRuntimeDeps pkgs;
           RUST_SRC_PATH = "${pkgs.rust-bin.stable.latest.rust-src}/lib/rustlib/src/rust/library";
           LD_LIBRARY_PATH = runtimeLibraryPath pkgs;
