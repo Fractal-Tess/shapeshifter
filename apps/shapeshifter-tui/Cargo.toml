@@ -1,0 +1,19 @@
+[package]
+name = "shapeshifter-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+codex-auth = { path = "../../crates/codex-auth" }
+codex-limits = { path = "../../crates/codex-limits" }
+cli-clipboard = "0.4"
+crossterm = { version = "0.28", features = ["event-stream"] }
+domain = { path = "../../crates/domain" }
+host-ops = { path = "../../crates/host-ops" }
+profile-store = { path = "../../crates/profile-store" }
+ratatui = "0.29"
+serde_json.workspace = true
+tui-textarea = "0.7"

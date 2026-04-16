@@ -49,15 +49,18 @@ jobs:
             libxrandr-dev \
             libxi-dev
 
-      - name: Build release binary
-        run: cargo build --release --package shapeshifter-desktop --target ${{ matrix.target }}
+      - name: Build release binaries
+        run: |
+          cargo build --release --package shapeshifter-desktop --target ${{ matrix.target }}
+          cargo build --release --package shapeshifter-tui --target ${{ matrix.target }}
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/shapeshifter-desktop dist/${{ matrix.artifact }}
-          chmod +x dist/${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/shapeshifter-tui dist/${{ matrix.artifact }}-tui
+          chmod +x dist/${{ matrix.artifact }} dist/${{ matrix.artifact }}-tui
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -65,6 +68,7 @@ jobs:
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/shapeshifter-desktop.exe dist/${{ matrix.artifact }}.exe
+          cp target/${{ matrix.target }}/release/shapeshifter-tui.exe dist/${{ matrix.artifact }}-tui.exe
 
       - uses: actions/upload-artifact@v4
         with:
