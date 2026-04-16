@@ -114,14 +114,14 @@
         shapeshifter-tui = mkPrebuilt pkgs {
           pname = "shapeshifter-tui";
           assetName = "shapeshifter-linux-x86_64-tui";
-          sha256 = "";
+          sha256 = "sha256-e9fa0m8PMI+n8Jkof+nKNQchgl0ot4iN4KTOyfNIyOg=";
           runtimeDeps = tuiRuntimeDeps pkgs;
         };
 
         shapeshifter-desktop = mkPrebuilt pkgs {
           pname = "shapeshifter-desktop";
           assetName = "shapeshifter-linux-x86_64";
-          sha256 = "";
+          sha256 = "sha256-YpTBBWE8azgbtabZuU8wQZdqXWmkaPzlkvGOFXgkxdA=";
           runtimeDeps = commonRuntimeDeps pkgs;
           wrapWithLibs = true;
         };
