@@ -68,6 +68,7 @@ pub enum Modal {
     DeleteConfirm,
     Import,
     Help,
+    UpdateConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,9 +107,17 @@ pub struct App {
     pub search_query: String,
     pub filtered_indices: Vec<usize>,
     pub marked_profiles: HashSet<String>,
+    pub available_update: Option<crate::updater::ReleaseInfo>,
+    pub update_in_progress: bool,
 
     worker_tx: Sender<WorkerMessage>,
     worker_rx: Receiver<WorkerMessage>,
+    update_rx: Option<Receiver<UpdateMessage>>,
+}
+
+pub enum UpdateMessage {
+    CheckResult(Option<crate::updater::ReleaseInfo>),
+    DownloadComplete(Result<()>),
 }
 
 #[derive(Clone)]
@@ -176,13 +185,18 @@ impl App {
             search_query: String::new(),
             filtered_indices: Vec::new(),
             marked_profiles: HashSet::new(),
+            available_update: None,
+            update_in_progress: false,
             worker_tx,
             worker_rx,
+            update_rx: None,
         };
         // Load accounts synchronously (fast) so the UI renders immediately
         if let Ok(snapshot) = load_snapshot(false) {
             app.apply_snapshot(snapshot);
         }
+        // Check for updates in the background
+        app.spawn_update_check();
         // Then kick off limits fetch in the background
         app.spawn_refresh_limits(false);
         Ok(app)
@@ -261,6 +275,40 @@ impl App {
         if let Some(notice) = &self.notice {
             if notice.created_at.elapsed() >= Duration::from_secs(5) {
                 self.notice = None;
+            }
+        }
+
+        // Poll update channel
+        if let Some(rx) = &self.update_rx {
+            match rx.try_recv() {
+                Ok(UpdateMessage::CheckResult(Some(release))) => {
+                    self.available_update = Some(release);
+                    self.update_rx = None;
+                }
+                Ok(UpdateMessage::CheckResult(None)) => {
+                    self.update_rx = None;
+                }
+                Ok(UpdateMessage::DownloadComplete(Ok(()))) => {
+                    self.update_in_progress = false;
+                    self.update_rx = None;
+                    self.notice = Some(OperationNotice::new(
+                        NoticeKind::Success,
+                        "Update downloaded. Restart to use the new version.",
+                    ));
+                }
+                Ok(UpdateMessage::DownloadComplete(Err(e))) => {
+                    self.update_in_progress = false;
+                    self.update_rx = None;
+                    self.notice = Some(OperationNotice::new(
+                        NoticeKind::Error,
+                        format!("Update failed: {e}"),
+                    ));
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    self.update_in_progress = false;
+                    self.update_rx = None;
+                }
             }
         }
     }
@@ -533,6 +581,35 @@ impl App {
     pub fn close_modal(&mut self) {
         self.modal = None;
         self.pending_delete_profile = None;
+    }
+
+    pub fn open_update_modal(&mut self) {
+        if self.available_update.is_some() {
+            self.modal = Some(Modal::UpdateConfirm);
+        }
+    }
+
+    pub fn confirm_update(&mut self) {
+        self.modal = None;
+        let Some(release) = self.available_update.clone() else {
+            return;
+        };
+        self.update_in_progress = true;
+        let (tx, rx) = mpsc::channel();
+        self.update_rx = Some(rx);
+        thread::spawn(move || {
+            let result = crate::updater::download_and_replace(&release);
+            let _ = tx.send(UpdateMessage::DownloadComplete(result));
+        });
+    }
+
+    fn spawn_update_check(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.update_rx = Some(rx);
+        thread::spawn(move || {
+            let result = crate::updater::check_for_update().ok().flatten();
+            let _ = tx.send(UpdateMessage::CheckResult(result));
+        });
     }
 
     pub fn confirm_delete(&mut self) {

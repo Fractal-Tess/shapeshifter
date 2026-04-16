@@ -42,7 +42,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         Some(Modal::DeleteConfirm) => draw_delete_modal(f, app),
         Some(Modal::Import) => draw_import_modal(f, app),
         Some(Modal::Help) => draw_help_modal(f),
+        Some(Modal::UpdateConfirm) => draw_update_modal(f, app),
         None => {}
+    }
+
+    // Update badge (bottom-right, non-intrusive)
+    if app.available_update.is_some() && app.modal != Some(Modal::UpdateConfirm) {
+        draw_update_badge(f, app);
     }
 
     if app.host_selector_open {
@@ -597,6 +603,7 @@ fn draw_help_modal(f: &mut Frame) {
         ("R", "Reload accounts from disk"),
         ("s", "Sync managed accounts to selected remote host"),
         ("", ""),
+        ("u", "Update (when available)"),
         ("?", "Show this help"),
         ("q", "Quit"),
         ("Ctrl+C", "Force quit"),
@@ -651,6 +658,88 @@ fn draw_host_selector(f: &mut Frame, app: &App) {
         .collect();
 
     f.render_widget(List::new(items).block(block), area);
+}
+
+fn draw_update_badge(f: &mut Frame, app: &App) {
+    let Some(release) = &app.available_update else {
+        return;
+    };
+    let area = f.area();
+    let text = format!(" Update {} available (u) ", release.tag);
+    let width = text.len() as u16 + 2;
+    let badge_area = Rect::new(
+        area.width.saturating_sub(width + 1),
+        area.height.saturating_sub(3),
+        width,
+        3,
+    );
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(SURFACE));
+
+    f.render_widget(Clear, badge_area);
+    f.render_widget(
+        Paragraph::new(Span::styled(text, Style::default().fg(Color::Yellow).bold()))
+            .block(block),
+        badge_area,
+    );
+}
+
+fn draw_update_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(55, 30, f.area());
+    f.render_widget(Clear, area);
+
+    let release = app
+        .available_update
+        .as_ref()
+        .map(|r| (r.tag.as_str(), r.name.as_str()))
+        .unwrap_or(("?", ""));
+
+    let block = Block::default()
+        .title(" Update Available ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(SURFACE))
+        .padding(Padding::new(2, 2, 1, 0));
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("New version: ", Style::default().fg(DIM)),
+            Span::styled(release.0, Style::default().fg(Color::Yellow).bold()),
+        ]),
+    ];
+    if !release.1.is_empty() {
+        lines.push(Line::from(Span::styled(release.1, Style::default().fg(Color::White))));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Current: ", Style::default().fg(DIM)),
+        Span::styled(
+            crate::updater::current_version(),
+            Style::default().fg(Color::White),
+        ),
+    ]));
+    lines.push(Line::from(""));
+
+    if app.update_in_progress {
+        lines.push(Line::from(Span::styled(
+            "Downloading...",
+            Style::default().fg(Color::Yellow).bold(),
+        )));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled(" Enter ", Style::default().fg(Color::Black).bg(Color::Yellow).bold()),
+            Span::raw(" Update  "),
+            Span::styled(" Esc ", Style::default().fg(Color::Black).bg(DIM).bold()),
+            Span::raw(" Cancel"),
+        ]));
+    }
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

@@ -15,5 +15,7 @@ domain = { path = "../../crates/domain" }
 host-ops = { path = "../../crates/host-ops" }
 profile-store = { path = "../../crates/profile-store" }
 ratatui = "0.29"
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tui-textarea = "0.7"

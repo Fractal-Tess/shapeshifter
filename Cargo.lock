@@ -3065,6 +3065,8 @@ dependencies = [
  "host-ops",
  "profile-store",
  "ratatui",
+ "reqwest",
+ "serde",
  "serde_json",
  "tui-textarea",
 ]

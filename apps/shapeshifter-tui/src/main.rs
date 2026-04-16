@@ -1,5 +1,6 @@
 mod app;
 mod ui;
+mod updater;
 
 use app::{App, FocusArea, Modal};
 use crossterm::{
@@ -65,6 +66,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<
                             Modal::DeleteConfirm => app.confirm_delete(),
                             Modal::Import => app.import_from_text(),
                             Modal::Help => app.close_modal(),
+                            Modal::UpdateConfirm => app.confirm_update(),
                         },
                         _ => {}
                     }
@@ -88,6 +90,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<
                     KeyCode::Char('q') => break,
                     KeyCode::Char('/') => app.start_search(),
                     KeyCode::Char('?') => app.modal = Some(Modal::Help),
+                    KeyCode::Char('u') => app.open_update_modal(),
                     KeyCode::Char('b') => app.login_browser(),
                     KeyCode::Char('d') => app.start_device_login(),
                     KeyCode::Char('D') => app.finish_device_login(),
