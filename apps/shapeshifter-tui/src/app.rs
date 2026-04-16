@@ -1016,8 +1016,26 @@ fn load_snapshot(fetch_limits: bool) -> Result<AppSnapshot> {
             auth_service.default_client_id(),
         )
     });
-    let profiles = profile_store.list_profiles().unwrap_or_default();
+    let mut profiles = profile_store.list_profiles().unwrap_or_default();
     let hosts = profile_store.load_hosts().unwrap_or_default();
+
+    // Auto-import: if auth.json has an account not yet saved as a profile, add it
+    if let Some(auth) = &current_auth {
+        let already_saved = profiles
+            .iter()
+            .any(|p| p.auth_file.tokens.access_token == auth.tokens.access_token);
+        if !already_saved && !auth.tokens.access_token.is_empty() {
+            let session = auth.to_session(
+                auth_service.default_issuer(),
+                auth_service.default_client_id(),
+            );
+            let name = default_profile_name(&session, auth);
+            if profile_store.save_profile(&name, auth).is_ok() {
+                // Re-read profiles so the new one appears
+                profiles = profile_store.list_profiles().unwrap_or_default();
+            }
+        }
+    }
 
     let limits_by_profile = if fetch_limits {
         let mut limits = HashMap::new();

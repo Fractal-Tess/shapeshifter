@@ -85,7 +85,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "codex-auth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "codex-limits"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "domain"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "chrono",
@@ -1323,7 +1323,7 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "host-ops"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "domain",
@@ -2555,7 +2555,7 @@ dependencies = [
 
 [[package]]
 name = "profile-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -3033,7 +3033,7 @@ dependencies = [
 
 [[package]]
 name = "shapeshifter-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "app-config",
@@ -3053,7 +3053,7 @@ dependencies = [
 
 [[package]]
 name = "shapeshifter-tui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3679,7 +3679,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ui-components"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "domain",
  "egui",

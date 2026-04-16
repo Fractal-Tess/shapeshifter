@@ -89,7 +89,7 @@ jobs:
 
       - name: Generate tag
         id: tag
-        run: echo "tag=v0.1.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=v0.2.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
