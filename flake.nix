@@ -64,7 +64,7 @@
           version = "0.2.0";
           src = ./.;
           buildAndTestSubdir = if pname == "shapeshifter-tui" then "apps/shapeshifter-tui" else "apps/shapeshifter-desktop";
-          cargoHash = "sha256-YtxNXJE/Svz7JwNnd9tqRO0P5dQ7+tnvGAKkPmU6Sjs=";
+          cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ pkgs.pkg-config ] ++ nativeBuildInputs;
           buildInputs = buildInputs;
           postFixup = postFixup;
