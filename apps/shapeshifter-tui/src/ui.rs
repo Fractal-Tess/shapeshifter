@@ -41,6 +41,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     match app.modal {
         Some(Modal::DeleteConfirm) => draw_delete_modal(f, app),
         Some(Modal::Import) => draw_import_modal(f, app),
+        Some(Modal::BrowserWaiting) => draw_browser_waiting_modal(f, app),
+        Some(Modal::CallbackUrl) => draw_callback_url_modal(f, app),
         Some(Modal::Help) => draw_help_modal(f),
         Some(Modal::UpdateConfirm) => draw_update_modal(f, app),
         None => {}
@@ -569,6 +571,82 @@ fn draw_import_modal(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(text).block(block), area);
 }
 
+fn draw_browser_waiting_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(50, 20, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Browser Login ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(SURFACE))
+        .padding(Padding::new(2, 2, 1, 0));
+
+    let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let frame = spinner[app.tick as usize % spinner.len()];
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(
+                format!("{frame} "),
+                Style::default().fg(Color::Yellow).bold(),
+            ),
+            Span::styled(
+                "Waiting for browser authorization...",
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Complete the login in your browser.",
+            Style::default().fg(DIM),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" Esc ", Style::default().fg(Color::Black).bg(DIM).bold()),
+            Span::raw(" Cancel"),
+        ]),
+    ];
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn draw_callback_url_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 30, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .title(" Paste Callback URL ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(ACCENT))
+        .style(Style::default().bg(SURFACE))
+        .padding(Padding::new(2, 2, 1, 0));
+
+    let cursor_char = if app.tick % 10 < 5 { "_" } else { " " };
+    let display_text = if app.callback_url_text.is_empty() {
+        format!("{cursor_char}")
+    } else {
+        format!("{}{cursor_char}", app.callback_url_text)
+    };
+
+    let lines = vec![
+        Line::from("After authorizing in the browser, paste the redirect URL here."),
+        Line::from(""),
+        Line::from(Span::styled(&display_text, Style::default().fg(Color::White))),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" Enter ", Style::default().fg(Color::Black).bg(ACCENT).bold()),
+            Span::raw(" Submit  "),
+            Span::styled(" Esc ", Style::default().fg(Color::Black).bg(DIM).bold()),
+            Span::raw(" Cancel"),
+        ]),
+    ];
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 fn draw_help_modal(f: &mut Frame) {
     let area = centered_rect(70, 80, f.area());
     f.render_widget(Clear, area);
@@ -594,7 +672,8 @@ fn draw_help_modal(f: &mut Frame) {
         ("/", "Search/filter profiles by name"),
         ("Esc", "Clear search filter / close modal"),
         ("", ""),
-        ("b", "Login via browser (OAuth PKCE flow)"),
+        ("b", "Login via browser (auto-callback)"),
+        ("B", "Login via browser (paste callback URL)"),
         ("d", "Start device code login"),
         ("D", "Finish pending device code login"),
         ("i", "Import account(s) from JSON or JSON array"),

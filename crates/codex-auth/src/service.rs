@@ -8,6 +8,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -117,6 +119,36 @@ impl CodexAuthService {
         }
 
         let query = wait_for_callback(&prompt, options.timeout)?;
+        if query.get("state").map(String::as_str) != Some(prompt.pkce.state.as_str()) {
+            return Err(AuthError::StateMismatch);
+        }
+        if let Some(error) = query.get("error") {
+            return Err(AuthError::Authorization(error.clone()));
+        }
+        let code = query
+            .get("code")
+            .ok_or_else(|| AuthError::Authorization("missing authorization code".into()))?;
+        self.exchange_code_for_tokens(
+            &options.issuer,
+            &options.client_id,
+            prompt.redirect_url.as_str(),
+            code,
+            &prompt.pkce.code_verifier,
+        )
+    }
+
+    pub fn login_with_browser_cancellable(
+        &self,
+        options: &BrowserAuthOptions,
+        cancel: Arc<AtomicBool>,
+    ) -> Result<OAuthSession, AuthError> {
+        let prompt = self.begin_browser_login(options)?;
+        if options.open_browser {
+            webbrowser::open(prompt.authorize_url.as_str())
+                .map_err(|err| AuthError::BrowserOpen(err.to_string()))?;
+        }
+
+        let query = wait_for_callback_cancellable(&prompt, options.timeout, &cancel)?;
         if query.get("state").map(String::as_str) != Some(prompt.pkce.state.as_str()) {
             return Err(AuthError::StateMismatch);
         }
@@ -271,6 +303,17 @@ impl CodexAuthService {
         AuthFile::from_oauth_session(session)
     }
 
+    pub fn exchange_callback_code(
+        &self,
+        issuer: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        code: &str,
+        code_verifier: &str,
+    ) -> Result<OAuthSession, AuthError> {
+        self.exchange_code_for_tokens(issuer, client_id, redirect_uri, code, code_verifier)
+    }
+
     fn exchange_code_for_tokens(
         &self,
         issuer: &str,
@@ -282,17 +325,25 @@ impl CodexAuthService {
         let response = self
             .http
             .post(format!("{}/oauth/token", issuer.trim_end_matches('/')))
-            .form(&[
-                ("grant_type", "authorization_code"),
-                ("code", code),
-                ("redirect_uri", redirect_uri),
-                ("client_id", client_id),
-                ("code_verifier", code_verifier),
-            ])
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(format!(
+                "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
+                urlencoding::encode(code),
+                urlencoding::encode(redirect_uri),
+                urlencoding::encode(client_id),
+                urlencoding::encode(code_verifier),
+            ))
             .send()
-            .map_err(|err| AuthError::Http(err.to_string()))?
-            .error_for_status()
             .map_err(|err| AuthError::Http(err.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(AuthError::Http(format!(
+                "token exchange failed: HTTP {status} — {body}"
+            )));
+        }
+
         let tokens: TokenResponse = response
             .json()
             .map_err(|err| AuthError::Http(err.to_string()))?;
@@ -351,6 +402,64 @@ fn wait_for_callback(
 
     let deadline = Instant::now() + timeout;
     loop {
+        if Instant::now() >= deadline {
+            return Err(AuthError::CallbackTimeout);
+        }
+
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let mut buffer = [0u8; 4096];
+                let read = stream
+                    .read(&mut buffer)
+                    .map_err(|err| AuthError::Callback(err.to_string()))?;
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                let path = request
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .ok_or_else(|| AuthError::Callback("invalid callback request".into()))?;
+                let url = Url::parse(&format!("http://localhost{path}"))
+                    .map_err(|err| AuthError::Callback(err.to_string()))?;
+
+                let response = if url.query_pairs().any(|(key, _)| key == "error") {
+                    "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nOAuth failed\r\n"
+                } else {
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nLogin completed. You can close this tab.\r\n"
+                };
+                let _ = stream.write_all(response.as_bytes());
+
+                return Ok(url
+                    .query_pairs()
+                    .map(|(key, value)| (key.to_string(), value.to_string()))
+                    .collect());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(err) => return Err(AuthError::Callback(err.to_string())),
+        }
+    }
+}
+
+fn wait_for_callback_cancellable(
+    prompt: &AuthPrompt,
+    timeout: Duration,
+    cancel: &AtomicBool,
+) -> Result<HashMap<String, String>, AuthError> {
+    let listener = TcpListener::bind((
+        "127.0.0.1",
+        prompt.redirect_url.port().unwrap_or(DEFAULT_REDIRECT_PORT),
+    ))
+    .map_err(|err| AuthError::Callback(err.to_string()))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|err| AuthError::Callback(err.to_string()))?;
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(AuthError::Cancelled);
+        }
         if Instant::now() >= deadline {
             return Err(AuthError::CallbackTimeout);
         }

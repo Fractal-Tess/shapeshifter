@@ -5,6 +5,8 @@ use domain::{AccountProfile, AuthFile, HostTarget, LimitsSnapshotSet, ManagedHos
 use host_ops::{HostOperator, RemoteHostSnapshot};
 use profile_store::ProfileStore;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -67,6 +69,8 @@ impl OperationNotice {
 pub enum Modal {
     DeleteConfirm,
     Import,
+    CallbackUrl,
+    BrowserWaiting,
     Help,
     UpdateConfirm,
 }
@@ -96,6 +100,9 @@ pub struct App {
     pub modal: Option<Modal>,
     pub pending_delete_profile: Option<String>,
     pub import_text: String,
+    pub callback_url_text: String,
+    pub callback_pkce: Option<codex_auth::PkceVerifier>,
+    browser_cancel: Option<Arc<AtomicBool>>,
 
     pub focus: FocusArea,
     pub action_bar_index: usize,
@@ -176,6 +183,9 @@ impl App {
             modal: None,
             pending_delete_profile: None,
             import_text: String::new(),
+            callback_url_text: String::new(),
+            callback_pkce: None,
+            browser_cancel: None,
             focus: FocusArea::ProfileList,
             action_bar_index: 0,
             should_quit: false,
@@ -206,7 +216,13 @@ impl App {
         self.tick = self.tick.wrapping_add(1);
         loop {
             match self.worker_rx.try_recv() {
-                Ok(message) => match message {
+                Ok(message) => {
+                    // Close browser waiting modal on any worker message
+                    if self.modal == Some(Modal::BrowserWaiting) {
+                        self.modal = None;
+                        self.browser_cancel = None;
+                    }
+                    match message {
                     WorkerMessage::Snapshot { snapshot, notice } => {
                         self.apply_snapshot(snapshot);
                         self.busy_operation = None;
@@ -259,7 +275,7 @@ impl App {
                         self.busy_operation = None;
                         self.notice = Some(notice);
                     }
-                },
+                }},
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.busy_operation = None;
@@ -694,13 +710,16 @@ impl App {
     }
 
     pub fn login_browser(&mut self) {
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.browser_cancel = Some(cancel.clone());
+        self.modal = Some(Modal::BrowserWaiting);
         self.run_background(BusyOperation::BrowserLogin, move || {
             let auth_service = CodexAuthService::new();
             let store = ProfileStore::new();
             let operator = HostOperator::new();
             let options = codex_auth::BrowserAuthOptions::default();
             let session = auth_service
-                .login_with_browser(&options)
+                .login_with_browser_cancellable(&options, cancel)
                 .map_err(anyhow::Error::msg)?;
             let auth_file = auth_service.auth_file_from_session(session.clone());
             let profile_name = default_profile_name(&session, &auth_file);
@@ -717,6 +736,109 @@ impl App {
                 notice: OperationNotice::new(
                     NoticeKind::Success,
                     format!("Browser login completed: `{profile_name}`."),
+                ),
+            })
+        });
+    }
+
+    pub fn cancel_browser_login(&mut self) {
+        if let Some(cancel) = self.browser_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.modal = None;
+        self.busy_operation = None;
+        self.notice = Some(OperationNotice::new(
+            NoticeKind::Error,
+            "Browser login cancelled.",
+        ));
+    }
+
+    pub fn open_callback_url_modal(&mut self) {
+        let auth_service = CodexAuthService::new();
+        let options = codex_auth::BrowserAuthOptions::default();
+        match auth_service.begin_browser_login(&options) {
+            Ok(prompt) => {
+                // Try to open the browser with the auth URL
+                let _ = webbrowser::open(prompt.authorize_url.as_str());
+                self.callback_pkce = Some(prompt.pkce);
+                self.callback_url_text.clear();
+                self.modal = Some(Modal::CallbackUrl);
+                self.notice = Some(OperationNotice::new(
+                    NoticeKind::Success,
+                    "Browser opened. Paste the callback URL after authorizing.",
+                ));
+            }
+            Err(err) => {
+                self.notice = Some(OperationNotice::new(
+                    NoticeKind::Error,
+                    format!("Failed to start login: {err}"),
+                ));
+            }
+        }
+    }
+
+    pub fn submit_callback_url(&mut self) {
+        let raw = self.callback_url_text.trim().to_string();
+        if raw.is_empty() {
+            self.notice = Some(OperationNotice::new(NoticeKind::Error, "URL is empty"));
+            return;
+        }
+        let Some(pkce) = self.callback_pkce.take() else {
+            self.notice = Some(OperationNotice::new(
+                NoticeKind::Error,
+                "No pending PKCE session",
+            ));
+            return;
+        };
+        self.modal = None;
+        self.callback_url_text.clear();
+
+        self.run_background(BusyOperation::BrowserLogin, move || {
+            let url = url::Url::parse(&raw)
+                .or_else(|_| url::Url::parse(&format!("http://localhost{raw}")))
+                .context("invalid callback URL")?;
+
+            let params: std::collections::HashMap<String, String> =
+                url.query_pairs().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+
+            if let Some(error) = params.get("error") {
+                anyhow::bail!("OAuth error: {error}");
+            }
+            let code = params
+                .get("code")
+                .context("callback URL missing 'code' parameter")?;
+
+            let auth_service = CodexAuthService::new();
+            let options = codex_auth::BrowserAuthOptions::default();
+            let redirect_uri = format!("http://localhost:{}/auth/callback", options.port);
+
+            let session = auth_service
+                .exchange_callback_code(
+                    &options.issuer,
+                    &options.client_id,
+                    &redirect_uri,
+                    code,
+                    &pkce.code_verifier,
+                )
+                .map_err(anyhow::Error::msg)?;
+
+            let auth_file = auth_service.auth_file_from_session(session.clone());
+            let profile_name = default_profile_name(&session, &auth_file);
+            let store = ProfileStore::new();
+            let operator = HostOperator::new();
+            let local_host = store
+                .load_hosts()?
+                .into_iter()
+                .find(|h| matches!(h.target, HostTarget::Local { .. }))
+                .context("missing local host")?;
+            operator.write_auth(&local_host, &auth_file)?;
+            store.save_profile(&profile_name, &auth_file)?;
+            let snapshot = load_snapshot(true)?;
+            Ok(WorkerMessage::Snapshot {
+                snapshot,
+                notice: OperationNotice::new(
+                    NoticeKind::Success,
+                    format!("Login via callback URL: `{profile_name}`."),
                 ),
             })
         });

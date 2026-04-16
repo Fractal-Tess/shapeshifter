@@ -14,4 +14,6 @@ pub enum AuthError {
     Authorization(String),
     #[error("browser open failed: {0}")]
     BrowserOpen(String),
+    #[error("operation cancelled")]
+    Cancelled,
 }

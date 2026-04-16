@@ -12,6 +12,9 @@
       ...
     }@inputs:
     let
+      version = "0.2.1";
+      repo = "Fractal-Tess/shapeshifter";
+
       eachSystem =
         f:
         nixpkgs.lib.genAttrs (import systems) (
@@ -54,14 +57,45 @@
         pkgs:
         "/run/opengl-driver/lib:${pkgs.lib.makeLibraryPath (commonRuntimeDeps pkgs)}";
 
-      rustToolchain = pkgs: pkgs.rust-bin.stable.latest.default;
+      # Prebuilt binary packages from GitHub releases
+      mkPrebuilt =
+        pkgs:
+        { pname, assetName, sha256, runtimeDeps ? [ ], wrapWithLibs ? false }:
+        let
+          src = pkgs.fetchurl {
+            url = "https://github.com/${repo}/releases/download/v${version}/${assetName}";
+            inherit sha256;
+          };
+        in
+        pkgs.stdenv.mkDerivation {
+          inherit pname version;
+          dontUnpack = true;
+          nativeBuildInputs = pkgs.lib.optionals wrapWithLibs [ pkgs.makeWrapper pkgs.autoPatchelfHook ];
+          buildInputs = runtimeDeps;
+          installPhase = ''
+            mkdir -p $out/bin
+            cp ${src} $out/bin/${pname}
+            chmod +x $out/bin/${pname}
+          '';
+          postFixup =
+            if wrapWithLibs then ''
+              wrapProgram $out/bin/${pname} \
+                --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeDeps}"
+            '' else "";
+          meta = {
+            description = "ChatGPT / Codex account manager";
+            license = pkgs.lib.licenses.mit;
+            mainProgram = pname;
+            platforms = [ "x86_64-linux" ];
+          };
+        };
 
-      mkRustPackage =
+      # Build from source (fallback / dev)
+      mkFromSource =
         pkgs:
         { pname, buildInputs ? [ ], nativeBuildInputs ? [ ], postFixup ? "" }:
         pkgs.rustPlatform.buildRustPackage {
-          inherit pname;
-          version = "0.2.0";
+          inherit pname version;
           src = ./.;
           buildAndTestSubdir = if pname == "shapeshifter-tui" then "apps/shapeshifter-tui" else "apps/shapeshifter-desktop";
           cargoLock.lockFile = ./Cargo.lock;
@@ -77,7 +111,23 @@
     in
     {
       packages = eachSystem (pkgs: {
-        shapeshifter-tui = mkRustPackage pkgs {
+        shapeshifter-tui = mkPrebuilt pkgs {
+          pname = "shapeshifter-tui";
+          assetName = "shapeshifter-linux-x86_64-tui";
+          sha256 = "";
+          runtimeDeps = tuiRuntimeDeps pkgs;
+        };
+
+        shapeshifter-desktop = mkPrebuilt pkgs {
+          pname = "shapeshifter-desktop";
+          assetName = "shapeshifter-linux-x86_64";
+          sha256 = "";
+          runtimeDeps = commonRuntimeDeps pkgs;
+          wrapWithLibs = true;
+        };
+
+        # Build from source variants
+        shapeshifter-tui-dev = mkFromSource pkgs {
           pname = "shapeshifter-tui";
           buildInputs = tuiRuntimeDeps pkgs;
           postFixup = ''
@@ -85,7 +135,7 @@
           '';
         };
 
-        shapeshifter-desktop = mkRustPackage pkgs {
+        shapeshifter-desktop-dev = mkFromSource pkgs {
           pname = "shapeshifter-desktop";
           buildInputs = commonRuntimeDeps pkgs;
           nativeBuildInputs = [ pkgs.makeWrapper ];

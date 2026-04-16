@@ -60,15 +60,29 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<
 
                 // Modal input
                 if let Some(modal) = app.modal {
-                    match key.code {
-                        KeyCode::Esc => app.close_modal(),
-                        KeyCode::Enter => match modal {
-                            Modal::DeleteConfirm => app.confirm_delete(),
-                            Modal::Import => app.import_from_text(),
-                            Modal::Help => app.close_modal(),
-                            Modal::UpdateConfirm => app.confirm_update(),
+                    match modal {
+                        Modal::CallbackUrl => match key.code {
+                            KeyCode::Esc => app.close_modal(),
+                            KeyCode::Enter => app.submit_callback_url(),
+                            KeyCode::Backspace => { app.callback_url_text.pop(); }
+                            KeyCode::Char(c) => app.callback_url_text.push(c),
+                            _ => {}
                         },
-                        _ => {}
+                        Modal::BrowserWaiting => match key.code {
+                            KeyCode::Esc => app.cancel_browser_login(),
+                            _ => {}
+                        },
+                        _ => match key.code {
+                            KeyCode::Esc => app.close_modal(),
+                            KeyCode::Enter => match modal {
+                                Modal::DeleteConfirm => app.confirm_delete(),
+                                Modal::Import => app.import_from_text(),
+                                Modal::Help => app.close_modal(),
+                                Modal::UpdateConfirm => app.confirm_update(),
+                                Modal::CallbackUrl | Modal::BrowserWaiting => unreachable!(),
+                            },
+                            _ => {}
+                        },
                     }
                     continue;
                 }
@@ -92,6 +106,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<
                     KeyCode::Char('?') => app.modal = Some(Modal::Help),
                     KeyCode::Char('u') => app.open_update_modal(),
                     KeyCode::Char('b') => app.login_browser(),
+                    KeyCode::Char('B') => app.open_callback_url_modal(),
                     KeyCode::Char('d') => app.start_device_login(),
                     KeyCode::Char('D') => app.finish_device_login(),
                     KeyCode::Char('i') => app.open_import_modal(),
