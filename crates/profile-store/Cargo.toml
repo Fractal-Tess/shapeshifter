@@ -1,0 +1,13 @@
+[package]
+name = "profile-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dirs.workspace = true
+domain = { path = "../domain" }
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

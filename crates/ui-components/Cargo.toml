@@ -1,0 +1,9 @@
+[package]
+name = "ui-components"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+domain = { path = "../domain" }
+egui.workspace = true

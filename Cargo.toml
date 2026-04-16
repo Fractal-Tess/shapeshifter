@@ -1,0 +1,37 @@
+[workspace]
+members = [
+    "apps/shapeshifter-desktop",
+    "crates/app-config",
+    "crates/codex-auth",
+    "crates/codex-limits",
+    "crates/domain",
+    "crates/host-ops",
+    "crates/profile-store",
+    "crates/ui-components",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6.0"
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "wgpu"] }
+egui = "0.31"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+ssh2 = "0.9"
+tempfile = "3.14"
+thiserror = "2.0"
+toml = "0.8"
+url = "2.5"
+uuid = { version = "1.8", features = ["serde", "v4"] }
+webbrowser = "1.0"
+winit = "0.30"

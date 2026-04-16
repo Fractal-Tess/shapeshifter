@@ -1,0 +1,21 @@
+[package]
+name = "shapeshifter-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+app-config = { path = "../../crates/app-config" }
+chrono.workspace = true
+codex-auth = { path = "../../crates/codex-auth" }
+codex-limits = { path = "../../crates/codex-limits" }
+domain = { path = "../../crates/domain" }
+eframe.workspace = true
+egui.workspace = true
+host-ops = { path = "../../crates/host-ops" }
+profile-store = { path = "../../crates/profile-store" }
+serde_json.workspace = true
+ui-components = { path = "../../crates/ui-components" }
+webbrowser.workspace = true
+winit.workspace = true
